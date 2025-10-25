@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxiKXfcsBfn5_cyZhYRsE6jVClaZGl47MW8vKqKoroTPpWeysgcvs4yRMlFYuwNcmMA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw57uP2-hyL04_unkW08C0iTWcuRZuEJSfYjTZ_CkV2HRr4jWNPMoZpylyLIkxYLwxA/exec';
 const GOOGLE_CLIENT_ID = '1056545204241-pffogljid1dafv23tpbmql76k27ob80f.apps.googleusercontent.com';
 
 const THEME = {
@@ -144,7 +144,8 @@ export default function ChecklistApp() {
     roomName: '',
     division: '',
     date: new Date().toISOString().slice(0, 10),
-    inspector: ''
+    inspector: '',
+    otherRemarks: '' 
   });
 
   const [answers, setAnswers] = useState(() => {
@@ -182,6 +183,16 @@ export default function ChecklistApp() {
     setSummary(s);
   }, [answers]);
 
+  // auto-hide success messages after 4 seconds
+  useEffect(() => {
+    if (!message) return;
+    if (message.type === 'success' || message.type === 'error') {
+      const t = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [message]);
+
+
   // Scroll helper
   function scrollToCategory(cat) {
     const ref = sectionRefs[cat];
@@ -200,7 +211,7 @@ export default function ChecklistApp() {
 
   function resetAll() {
     setAnswers(Object.fromEntries(Object.keys(answers).map(k => [k, { answer: 'N/A', remark: '' }])));
-    setMeta({ buildingName: '', roomName: '', division: '', date: new Date().toISOString().slice(0,10), inspector: '' });
+    setMeta({ buildingName: '', roomName: '', division: '', date: new Date().toISOString().slice(0,10), inspector: '', otherRemarks: '' });
   }
 
 // -------- Google Identity Services (GSI) setup --------
@@ -260,7 +271,7 @@ function signOut() {
 }
 
 // -------- Submit handler (sends metadata + answers to Apps Script) --------
-async function handleSubmit() {
+/* async function handleSubmit() {
   // basic validation
   if (!user || !user.id_token) {
     setMessage({ type: 'error', text: 'Please sign in with Google before submitting.' });
@@ -316,6 +327,64 @@ async function handleSubmit() {
   } finally {
     setSubmitting(false);
   }
+} */
+
+  async function handleSubmit() {
+  // ensure user is signed in and we have an id_token
+  if (!user || !user.id_token) {
+    setMessage({ type: 'error', text: 'Please sign in with Google before submitting.' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  setSubmitting(true);
+  setMessage(null);
+
+  // Build answers array in the same order as CHECKLIST_SECTIONS
+  const answersArray = [];
+  CHECKLIST_SECTIONS.forEach(sec => {
+    sec.questions.forEach(q => {
+      const a = answers[q.id] || { answer: 'N/A', remark: '' };
+      answersArray.push({ qid: q.id, answer: a.answer || 'N/A', remark: a.remark || '' });
+    });
+  });
+
+  const payload = {
+    meta, // buildingName, roomName, division, date, inspector
+    answers: answersArray,
+    userName: user.name || '',
+    userEmail: user.email || ''
+  };
+
+  try {
+    const bodyString = JSON.stringify({ id_token: user.id_token, data: payload });
+
+    // use text/plain to avoid CORS preflight (your app already used this approach earlier)
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: bodyString,
+    });
+
+    const json = await res.json();
+
+    if (res.ok && json && json.success) {
+      // show success message and clear the form
+      setMessage({ type: 'success', text: 'Submission saved to Google Sheet.' });
+
+      // clear all inputs (metadata + answers)
+      resetAll();
+
+      // optionally scroll to top / show summary etc.
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      setMessage({ type: 'error', text: (json && json.error) ? json.error : 'Submission failed' });
+    }
+  } catch (err) {
+    setMessage({ type: 'error', text: err.message || 'Network error' });
+  } finally {
+    setSubmitting(false);
+  }
 }
 
 
@@ -324,6 +393,24 @@ async function handleSubmit() {
       <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20 }}>
         <div>
           <h1 style={{ color: THEME.primary, textAlign: 'center', marginBottom: 20 }}>WORKPLACE INSPECTION CHECKLIST</h1>
+            {/* Message / Toast */}
+              {message && (
+                <div style={{
+                  margin: '8px 0 16px',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  maxWidth: 700,
+                  marginLeft: 'auto',
+                  marginRight: 'auto',
+                  textAlign: 'center',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  background: message.type === 'success' ? '#e6ffed' : '#fff1f0',
+                  color: message.type === 'success' ? '#0b6b2f' : '#8b1f1f',
+                  border: message.type === 'success' ? '1px solid #b7f2c9' : '1px solid #f5c6cb'
+                }}>
+                  {message.text}
+                </div>
+              )}
           <div id="google-signin" style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}></div>
           {user && (
             <div style={{ textAlign: 'center', marginBottom: 8 }}>
@@ -382,15 +469,43 @@ async function handleSubmit() {
             </div>
           ))}
 
+          {/* Other Comments / Remarks */}
+          <div
+            style={{
+              background: THEME.card,
+              borderRadius: 10,
+              padding: 12,
+              marginTop: 20,
+              marginBottom: 20,
+              boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+            }}
+          >
+            <label
+              htmlFor="otherRemarks"
+              style={{ fontWeight: 700, display: 'block', marginBottom: 6 }}
+            >
+              Other Comments / Remarks
+            </label>
+            <textarea
+              id="otherRemarks"
+              placeholder="Add any additional notes or observations here..."
+              value={meta.otherRemarks}
+              onChange={(e) => handleMetaChange('otherRemarks', e.target.value)}
+              style={{ width: '100%', minHeight: 80, borderRadius: 8, padding: 8 }}
+            />
+          </div>
+
+
           {/* Submit area */}
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={submitting}
-              style={{ padding: '10px 14px', borderRadius: 10, border: 'none', cursor: 'pointer', background: THEME.primary, color: '#fff' }}
+              disabled={!user || !user.id_token || submitting}
+              style={{ padding: '10px 14px', borderRadius: 10, border: 'none', cursor: (!user || !user.id_token || submitting) ? 'not-allowed' : 'pointer', 
+                  background: (!user || !user.id_token || submitting) ? '#c5d0e6' : THEME.primary, color: '#fff', opacity: (!user || !user.id_token || submitting) ? 0.7 : 1, transition: 'background 0.3s ease', }}
             >
-              {submitting ? 'Submitting...' : 'Submit'}
+              {submitting ? 'Submitting...' : (!user || !user.id_token) ? 'Sign in to Submit' : 'Submit'}
             </button>
 
             <button type="button" onClick={resetAll} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ddd', background: THEME.card }}>Reset</button>
