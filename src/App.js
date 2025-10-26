@@ -387,6 +387,12 @@ function signOut() {
   }
 }
 
+  const DIVISIONS = [
+  "OTRCC","ICTU","LEGAL","CHPO (RITD)","MSW","NURSING","DMS","NDS","HIMS","PSYCH",
+  "LIVELIHOOD","RADIOLOGY","DETOX","OAD","OUTPATIENT","AFTERCARE","OCAO (FAD)","ACCTG",
+  "GSD","BILLING","CASH OP","BUDGET","MMU","HRDU","PMU"
+  ];
+
 
   return (
     <div style={{ background: THEME.background, minHeight: '100vh', padding: 20 }}>
@@ -435,7 +441,16 @@ function signOut() {
 
               <div>
                 <label style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>Division / Section / Unit</label>
-                <input type="text" value={meta.division} onChange={(e) => handleMetaChange('division', e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8 }} />
+                <select
+                  value={meta.division || ""}
+                  onChange={(e) => handleMetaChange('division', e.target.value)}
+                  style={{ width: '100%', padding: 8, borderRadius: 8 }}
+                  aria-label="Division or Section or Unit"
+                  required
+                >
+                  <option value="" disabled>Select division / section / unit</option>
+                  {DIVISIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
               </div>
 
               <div>
